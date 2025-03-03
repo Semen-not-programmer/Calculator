@@ -27,7 +27,7 @@ class Expression:
     """
     Класс, генерирующий случайные выражения без неизвестных
     diff_type_check - список уровней сложности
-    chars - соответствие символов
+    CHARS - соответствие символов
     """
     numeric = ['0', '1', '2', '3', '4','5', '6', '7', '8', '9', '.', ',']
     operators = ['+', '-', '*', 'over']
@@ -36,6 +36,11 @@ class Expression:
               'subtraction': '-',
               'division': 'over',
               'multiplication': '*'}
+    bracket_circle = ['(', ')']
+    bracket_square = ['[', ']']
+    bracket_shaped = ['{', '}']
+    bracket_list = ['(', ')', '[', ']', '{', '}']
+
 
     def __init__(self,
                  length: int,
@@ -218,56 +223,70 @@ class Expression:
         else:
             self.answer = out
 
-    @classmethod
-    def decoder(cls,
+
+    def decoder(self,
                 task: str) -> float:
         """
         Рекурсивный метод, который вычистяет численное значение выражения
         task - текст выражения, которое необходимо вычислить
 
-        замена вычитаний на относительные  значения
+        замена вычитаний на относительные значения
         9-8+17-24 -> 9+n8+17+n24
 
-        рекурсивная функция побстёта бинарных операторов
+        рекурсивная функция подсчёта бинарных операторов
         9+n8+17+n24 разбивается на 9 и n8+17+n24
         n8+17+n24 разбивается на n8 и 17+n24
         17+n24 разбивается на 17 и n24
         подсчёт 17 как числа 17 и n24 как числа -24
         и так далее
-
-        !!! Вывод ответа реализован в getter'е для атрибута answer
         """
+        print(task)
 
         #замена вычитаний на относительные  значения
         #9-8+17-24 -> 9+n8+17+n24
         for i in range(len(task)):
             if task[i] == '-' and task[i + 1] not in ['(', '{', '[']:
-                task = task[: i] + '+n' + task[i + 1:]
+                if task[i - 1] not in self.operators:
+                    task = task[: i] + '+n' + task[i + 1:]
+                else:
+                    task = task[: i] + 'n' + task[i + 1:]
 
-        # рекурсивная функция побстёта бинарных операторов
-        is_task = cls.solwer(task)
+
+
+        for var in self.bracket_list:
+            if var in task:
+                # получение индексов скобок
+                low_index = 0
+                up_index = len(task)
+                bracket_first, bracket_second = self.bracket_finder(task, low_index, up_index)
+                # счёт только того, что в скобках
+                task = str(self.decoder(task[:bracket_first] + str(self.decoder(task[bracket_first + 1:bracket_second])) + task[bracket_second + 1:]))
+                break
+
+        # рекурсивная функция подсчёта бинарных операторов
+        is_task = self.solwer(task)
         if not is_task:
-            for operator in cls.operators:
+            for operator in self.operators:
             # TODO порядок операторов по приоритетам действий
-            # TODO флак на нахождение внутри скобочки
+            # TODO флаг на нахождение внутри скобочки
                 pos = task.find(operator)
                 if pos == -1:
                     continue
                 size = len(operator)
                 var_left = task[:pos]
                 var_right = task[pos + size:]
-                is_var_left = cls.solwer(var_left)
-                is_var_right = cls.solwer(var_right)
+                is_var_left = self.solwer(var_left)
+                is_var_right = self.solwer(var_right)
                 break
             if is_var_left:
                 var_left = is_var_left
             else:
-                var_left = cls.decoder(var_left)
+                var_left = self.decoder(var_left)
 
             if is_var_right:
                 var_right = is_var_right
             else:
-                var_right = cls.decoder(var_right)
+                var_right = self.decoder(var_right)
 
             if operator == '+':
                 return var_left + var_right
@@ -280,7 +299,6 @@ class Expression:
 
         else:
             return is_task
-
 
     @classmethod
     def solwer(cls,
@@ -295,13 +313,52 @@ class Expression:
         if len(task) < 1:
             return None
         sign = 1
-        if task[0] == 'n':
+        if task[0] == 'n' or task[0] == '-':
             sign = -1
             task = task[1:]
         for i in range(len(task)):
             if not task[i] in cls.numeric:
                 return None
         return float(task) * sign
+
+    def bracket_finder(self,
+                       task: str,
+                       low_index: int,
+                       up_index: int) -> Union[tuple[Union[int, None]], None]:
+        """
+        Метод предназначен для поиска вхождений скобок наиболее глубоких
+        :param task: текст выражения
+        :param low_index: нижний индекс self.task, с которого начинается поиск скобки
+        :param up_index: верхний индекс self.task, с которого начинается поиск скобки
+        :return: возвращает кортеж (нижний индекс, верхний индекс) вхождения скобки
+        """
+        # индекс открывающей скобки
+        bracket_first = None
+        # индекс закрывающей скобки
+        bracket_second = None
+        # флаг на нахождение открывающей скобки
+        flag = False
+        for i in range(low_index, up_index):
+            var = task[i]
+            if var in self.bracket_list:
+                if var is self.bracket_circle[0]:
+                    bracket_first = i
+                    flag = True
+                elif var is self.bracket_circle[1]:
+                    if flag:
+                        bracket_second = i
+                        break
+                    else:
+                        raise ValueError("В методе строка, начинающаяся с открывающей скобки")
+                else:
+                    pass
+                    # TODO Сделать условия для остальных скобок
+        # Проверка наличия всех скобок
+        if bracket_first and bracket_second:
+            return tuple([bracket_first, bracket_second])
+        else:
+            return None
+
 
 #TODO Добавление скобок
 #TODO Добавление вложенности (а надо?)
@@ -449,16 +506,14 @@ if __name__ == "__main__":
     for i in ['t', 'a']:
         export(time, i)
 
-    get_result(4)
-    get_result(5)
-    get_result(6)
-    get_result(7)
 
 
 
 
 
-# git commit -m "Создан механизм генерации и вывода выражений без скобок только со сложением относительных чисел"
+
+
+# git commit -m ""
 
 
 
