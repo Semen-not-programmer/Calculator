@@ -6,6 +6,11 @@ import math
 import datetime
 
 SOURCE = '1.2_Скобки_сложно'
+count_all = 0
+count_BracketError = 0
+count_UnboundLocalError = 0
+count_ValueError = 0
+
 
 # Создать функции для основных действий: сложения, умножения, деления, вычитания
 # Они должны быть рекурсивными - внутри могут содержаться другие функции
@@ -22,6 +27,24 @@ SOURCE = '1.2_Скобки_сложно'
 # TODO Метод проверки сложности деления десятичных чисел
 # TODO Создать механизм раскрытия скобок для простого счёта дробей
 #  показывать, где стоят
+
+
+class BracketError(Exception):
+    """
+    Ошибка для обработки исключений в генерации скобок
+    """
+    def __init__(self, *args):
+        if args:
+            self.message = args[0]
+        else:
+            self.message = None
+
+    def __str__(self):
+        if self.message:
+            return f"Ошибка со скобками, {self.message}"
+        else:
+            return "Ошибка со скобками"
+
 
 class Expression:
     """
@@ -41,12 +64,12 @@ class Expression:
     bracket_shaped = ['{', '}']
     bracket_list = ['(', ')', '[', ']', '{', '}']
 
-
     def __init__(self,
                  length: int,
                  low_border: Union[int, float] = 3,
                  high_border: Union[int, float] = 25,
-                 diff_type: str = 'N'):
+                 diff_type: str = 'N',
+                 brackets: int = 1) -> None:
         """
         Инизиализация входных данных
         parts - доли операций в выражении
@@ -54,7 +77,7 @@ class Expression:
         parts = {'addition': 1,     #доля операций сложения
          'subtraction': 1,          #доля операций вычитания
          'division': 0,             #доля операций деления
-         'multiplication': 0}       #доля операций умножения
+         'multiplication': 0}        #доля операций умножения
 
         low_border - нижняя граница диапазона
         high_border - верхняя граница диапазона
@@ -80,12 +103,12 @@ class Expression:
         self.low_border = low_border
 
         self.check_type(diff_type, 'diff_type', str)
-        if diff_type in __class__.diff_type_check:
+        if diff_type in self.diff_type_check:
             self.diff_type = diff_type
         else:
             raise ValueError(f"Значение diff_type {diff_type} не является "
                              f"допустимым "
-                             f"{__class__.diff_type_check}")
+                             f"{self.diff_type_check}")
 
         self.check_type(length, 'length', int)
         self.check_value_positive(length, 'length')
@@ -100,10 +123,18 @@ class Expression:
         self.task = None
         self.answer = None
 
+        # задание количеств скобок
+        self.check_type(brackets, 'brackets', int)
+        self.check_value_positive(brackets, 'brackets')
+        self.brackets_start = brackets
+        self.brackets_first = brackets
+        self.brackets_second = brackets
+
         # заполнение списков текстов и значений
         self.term_list = [0] * self.length
         self.task_list = ['0'] * self.length
         self.answer_list = [0] * self.length
+
 
     @staticmethod
     def check_type(value: Any,
@@ -182,7 +213,6 @@ class Expression:
                     if not count:
                         break
 
-
     def generator(self):
         """
         Метод генерирует текст выражения и ответ, используя вспомогательный класс Term
@@ -192,24 +222,45 @@ class Expression:
         сборка выражения
         сборка ответа
         """
+        # длина выражения оператора
+        length = 0
         for i in range(self.length):
             self.term_list[i] = Term(self.diff_type, self.low_border, self.high_border)
             self.term_list[i].generator()
             self.task_list[i] = self.term_list[i].task
             self.answer_list[i] = self.term_list[i].answer
 
-        #заполнение текста операциями
+        # заполнение текста операциями
         self.task = ''
         for i in range(self.length):
+            # случайное добавление скобки
+            self.add_bracket(length)
+            # вставка символа
             self.task += self.task_list[i]
             if i != self.length - 1:
-                #случайный выбор операции
+                # случайный выбор операции
                 while True:
                     name = random.choice(list(self.parts.keys()))
                     if self.parts[name]:
                         self.parts[name] -= 1
-                        self.task += __class__.chars[name]
+                        # длина выражения оператора
+                        length = len(self.chars[name])
+                        self.task += self.chars[name]
+
+                        # случайное добавление скобки
+                        self.add_bracket(length)
                         break
+        # добавление закрывающих скобок, если они остались, в конец
+        if self.brackets_first < self.brackets_second:
+            self.task += self.bracket_circle[1] * (self.brackets_second - self.brackets_first)
+        # добавление открывающих скобок, если они остались, в начало
+        elif self.brackets_first > self.brackets_second:
+            self.task = self.bracket_circle[0] * (self.brackets_first - self.brackets_second) + self.task
+
+        global SOURCE
+        log = open('log_' + SOURCE + '.txt', 'a')
+        log.write(self.task)
+        log.close()
 
         # проверка того, что есть аттрибут self.task (был вызван метод generator())
         if self.task:
@@ -223,6 +274,24 @@ class Expression:
         else:
             self.answer = out
 
+    def add_bracket(self,
+                    length: int) -> None:
+        """
+        Метод для случайной вставки скобок в выражение
+        :param length: длина оператора, перед которым ставится скобка
+        :return: None
+        """
+        if not random.randint(0, 2):
+            #если выпало 50% и если счётчик скобок не кончился
+            if random.randint(0, 1) and self.brackets_first:
+                # добавление открывающей скобки после знака
+                self.task += self.bracket_circle[0]
+                self.brackets_first -= 1
+            # если счётчик скобок не кончился и если первая скобка открывающая
+            elif self.brackets_second and self.brackets_start != self.brackets_first:
+                # добавление закрывающей скобки перед знаком
+                self.task = self.task[:-length] + self.bracket_circle[1] + self.task[-length:]
+                self.brackets_second -= 1
 
     def decoder(self,
                 task: str) -> float:
@@ -240,18 +309,22 @@ class Expression:
         подсчёт 17 как числа 17 и n24 как числа -24
         и так далее
         """
-        print(task)
 
         #замена вычитаний на относительные  значения
         #9-8+17-24 -> 9+n8+17+n24
-        for i in range(len(task)):
+        for i in range(len(task) - 1):
+            # если минус не перед скобкой
             if task[i] == '-' and task[i + 1] not in ['(', '{', '[']:
                 if task[i - 1] not in self.operators:
-                    task = task[: i] + '+n' + task[i + 1:]
+                    # если два минуса подряд 13--5
+                    if task[i + 1] == '-':
+                        task = task[: i] + '+' + task[i + 2:]
+                    # если относительное число 13-5
+                    else:
+                        task = task[: i] + '+n' + task[i + 1:]
+                # если минус после операции 13*-5
                 else:
                     task = task[: i] + 'n' + task[i + 1:]
-
-
 
         for var in self.bracket_list:
             if var in task:
@@ -264,7 +337,7 @@ class Expression:
                 break
 
         # рекурсивная функция подсчёта бинарных операторов
-        is_task = self.solwer(task)
+        is_task = self.solver(task)
         if not is_task:
             for operator in self.operators:
             # TODO порядок операторов по приоритетам действий
@@ -275,8 +348,8 @@ class Expression:
                 size = len(operator)
                 var_left = task[:pos]
                 var_right = task[pos + size:]
-                is_var_left = self.solwer(var_left)
-                is_var_right = self.solwer(var_right)
+                is_var_left = self.solver(var_left)
+                is_var_right = self.solver(var_right)
                 break
             if is_var_left:
                 var_left = is_var_left
@@ -301,7 +374,7 @@ class Expression:
             return is_task
 
     @classmethod
-    def solwer(cls,
+    def solver(cls,
                task: str) -> Union[int, float, None]:
         """
         Метод расшифровывает значения из текстового выражения
@@ -324,7 +397,7 @@ class Expression:
     def bracket_finder(self,
                        task: str,
                        low_index: int,
-                       up_index: int) -> Union[tuple[Union[int, None]], None]:
+                       up_index: int) -> Union[tuple[int], None]:
         """
         Метод предназначен для поиска вхождений скобок наиболее глубоких
         :param task: текст выражения
@@ -333,9 +406,9 @@ class Expression:
         :return: возвращает кортеж (нижний индекс, верхний индекс) вхождения скобки
         """
         # индекс открывающей скобки
-        bracket_first = None
+        bracket_first = -1
         # индекс закрывающей скобки
-        bracket_second = None
+        bracket_second = -1
         # флаг на нахождение открывающей скобки
         flag = False
         for i in range(low_index, up_index):
@@ -349,12 +422,12 @@ class Expression:
                         bracket_second = i
                         break
                     else:
-                        raise ValueError("В методе строка, начинающаяся с открывающей скобки")
+                        raise BracketError("В методе строка, начинающаяся с открывающей скобки")
                 else:
                     pass
                     # TODO Сделать условия для остальных скобок
         # Проверка наличия всех скобок
-        if bracket_first and bracket_second:
+        if bracket_first != -1 and bracket_second != -1:
             return tuple([bracket_first, bracket_second])
         else:
             return None
@@ -421,7 +494,7 @@ class Term:
         self.high_border = high_border
         self.task = None
         self.answer = None
-        self.index = __class__.index
+        self.index = self.index
         self.increase_index()
 
     def generator(self) -> None:
@@ -437,7 +510,7 @@ class Term:
     @classmethod
     def increase_index(cls) -> None:
         """
-        Метод увеличимает значение порядкового номера выражения
+        Метод увеличивает значение порядкового номера выражения
         """
         cls.index += 1
 
@@ -463,6 +536,8 @@ def export(value: str, prefix: str) -> None:
         prefix_text = 'task'
     elif prefix == 'a':
         prefix_text = 'answer'
+    elif prefix == 'l':
+        prefix_text = 'log'
     else:
         prefix_text = prefix
 
@@ -487,33 +562,127 @@ def get_result(length: int,
         'Q_dr' - рациональные числа (Z/N) как дробь
         'Q_de' - рациональные числа (x.xxx) как десячичное число
     length - количество членов в выражении
-
-
     """
-    t = Expression(length, low_border, high_border, diff_type)
-    if parts:
-        t.part_change(parts)
-    t.generator()
-    print(t)
+    global count_all
+    global count_BracketError
+    global count_UnboundLocalError
+    global count_ValueError
 
+    flag = True
+    while flag:
+        count_all += 1
+        try:
+            t = Expression(length, low_border, high_border, diff_type)
+            if parts:
+                t.part_change(parts)
+            t.generator()
+            # print(t)
+        except BracketError as e:
+            # print('Ошибка в скобках')
+            export('\nОшибка в скобках' + str(e), 'l')
+            count_BracketError += 1
+        except UnboundLocalError as e:
+            # print('UnboundLocalError')
+            export('\nUnboundLocalError' + str(e), 'l')
+            count_UnboundLocalError += 1
+        except ValueError as e:
+            # print('ValueError')
+            export('\nValueError' + str(e), 'l')
+            count_ValueError += 1
+        else:
+            flag = False
     # экспорт
     export(str(t.task) + '=?', 't')
     export(str(t.answer), 'a')
+    export('\n' + str(t) + '\n\n', 'l')
+
+
+def red_text(var: str):
+    """
+    :param var: текст, который нужно перекрасить
+    :return: str, вывод красного текста
+    """
+    return "\033[31m{}".format(var)
+    # 033[ - обозначение того, что дальше идет какой - то управляющий цветом код
+    # 31m - красный цвет
+
+
+def checking(task_source: str,
+             answer_source: str) -> str:
+    """
+    Функция проверки правильности счёта программ
+    :param task_source: источник файла с заданиями
+    :param answer_source: источник файла с ответами
+    :return: None если успешно. Текст, когда ответ не сходится
+    """
+    task_f = open(task_source, 'r')
+    answer_f = open(answer_source, 'r')
+
+    # пропуск записи времени
+    while True:
+        task_line = task_f.readline()
+        answer_line = answer_f.readline()
+        if task_line[0] == '~' and answer_line[0] == '~':
+            break
+
+    out_str = ''
+
+    while True:
+        task_line = task_f.readline()[:-3].strip()
+        answer_line = answer_f.readline().strip()
+        if task_line == '' or task_line[0] == '~':
+            break
+        answer_from_task = eval(task_line)
+        if str(answer_from_task) != answer_line:
+            out_str += f'{task_line} != {answer_line}\n ответ: {answer_from_task}'
+            print(f'Задание: {task_line}')
+            print(f'Ответ: {answer_line}')
+            print(f'Ответ проги: {answer_from_task}')
+            print()
+
+    task_f.close()
+    answer_f.close()
+
+    if out_str:
+        return red_text(out_str)
+    else:
+        return "Проверка не выявила проблем"
+
 
 
 if __name__ == "__main__":
-    time = '\n\n' + str(datetime.datetime.now())
-    for i in ['t', 'a']:
+    # очистка
+    f = open('log_' + SOURCE + '.txt', 'w')
+    f.close()
+    f = open('task_' + SOURCE + '.txt', 'w')
+    f.close()
+    f = open('answer_' + SOURCE + '.txt', 'w')
+    f.close()
+
+    time = '\n\n~' + str(datetime.datetime.now())
+    for i in ['t', 'a', 'l']:
         export(time, i)
 
+    for i in range(50):
+        get_result(5)
+        get_result(6)
+        get_result(7)
+        get_result(8)
+    indent = 20
+    print(f"Процент неправильных ответов по BracketError: {' ' * (indent - 12)}{(count_BracketError / count_all * 100):.2f}")
+    print(f"Процент неправильных ответов по UnboundLocalError: {' ' * (indent - 17)}{(count_UnboundLocalError / count_all * 100):.2f}")
+    print(f"Процент неправильных ответов по ValueError: {' ' * (indent - 10)}{(count_ValueError / count_all * 100):.2f}")
+
+    # проверка на правильность
+    print(checking('task_' + SOURCE + '.txt', 'answer_' + SOURCE + '.txt'))
 
 
+# решить проблему - не решает пример
+# (((16-23-10)+6)-10+20)+11
+# UnboundLocalErrorlocal variable 'is_var_left' referenced before assignment
 
-
-
-
-
-# git commit -m ""
+# git add ./1.2_Скобки_сложно.py
+# git commit -m "Реализована генерация примеров со скобками и проверка истинности ответов"
 
 
 
